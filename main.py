@@ -6,6 +6,9 @@ import marqo
 from minio import Minio
 from dotenv import load_dotenv
 import os
+import random
+import string
+
 
 app = Flask(__name__)
 
@@ -32,6 +35,21 @@ minio_client = Minio(
     os.getenv('MINIO_URL'),
     access_key=os.getenv('MINIO_ACCESS_KEY'),
     secret_key=os.getenv('MINIO_SECRET_KEY'),
+    secure=False 
+)
+
+# Make the bucket if it doesn't exist.
+bucket_name = os.getenv('MINIO_BUCKET')
+found = minio_client.bucket_exists(bucket_name)
+if not found:
+    minio_client.make_bucket(bucket_name)
+    print("Created bucket", bucket_name)
+else:
+    print("Bucket", bucket_name, "already exists")
+
+# Upload the file, renaming it in the process
+minio_client.fput_object(
+    bucket_name, destination_file, source_file,
 )
 
 mq = marqo.Client(url=os.getenv('MARQO_URL'))
@@ -82,3 +100,7 @@ def register():
 
     # Assuming everything went well:
     return jsonify({"status": "success", "message": "Registration successful!"}), 201
+
+
+
+
