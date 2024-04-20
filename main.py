@@ -1,5 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
+import psycopg2
+import json
+import marqo
+from minio import Minio
+from dotenv import load_dotenv
+import os
 
 app = Flask(__name__)
 
@@ -9,10 +15,39 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Connect to the database
+db_connect = psycopg2.connect(
+    host=os.getenv('POSTGRES_HOST'),
+    database=os.getenv('POSTGRES_DB'),
+    user=os.getenv('POSTGRES_USER'),
+    password=os.getenv('POSTGRES_PASSWORD'),
+    port=os.getenv('POSTGRES_PORT')
+)
+
+# Connect to MinIO
+minio_client = Minio(
+    os.getenv('MINIO_URL'),
+    access_key=os.getenv('MINIO_ACCESS_KEY'),
+    secret_key=os.getenv('MINIO_SECRET_KEY'),
+)
+
+mq = marqo.Client(url=os.getenv('MARQO_URL'))
+
+# Called with the file name from MinIO
+def get_file_from_minio(file_name):
+    # Get the file from MinIO
+    file_data = minio_client.get_object(
+        os.getenv('MINIO_BUCKET'),
+        file_name
+    )
+    return file_data
+
 @app.route('/')
 def hello():
     return 'Hello world with Flask'
-
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
