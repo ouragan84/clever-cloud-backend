@@ -40,6 +40,18 @@ Create an Access Key, copy the Access Key and Secret Key for the .env.
 
 Set .env to:
 ```
+POSTGRES_HOST=localhost
+POSTGRES_DB=clevercloud
+POSTGRES_USER=local
+POSTGRES_PASSWORD=password
+POSTGRES_PORT=5432
+
+MARQO_URL=http://localhost:8882
+
+MINIO_URL=localhost:9000
+MINIO_ACCESS_KEY={PASTE_ACCESS_KEY}
+MINIO_SECRET_KEY={PASTE_SECRET_KEY}
+MINIO_BUCKET=clevercloud
 
 ```
 
