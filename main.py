@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, url_for
+from flask import Flask, request, jsonify, redirect, url_for, send_file
 from flask_cors import CORS, cross_origin
 import psycopg2
 import json
@@ -10,6 +10,8 @@ import random
 import string
 import time
 from werkzeug.utils import secure_filename
+import io
+
 
 
 import jwt
@@ -69,26 +71,6 @@ else:
 # Connect to Marqo
 mq = marqo.Client(url=os.getenv('MARQO_URL'))
 
-# If marqo index 'clever-cloud' is not created, create it.
-# marqo_settings={
-#     "treat_urls_and_pointers_as_images": True,
-#     "model": "openai/clip-vit-large-patch14"
-# }
-# marqo_index = mq.index("clever-cloud")
-
-# if marqo_index.get_settings != marqo_settings:
-#     marqo_index.delete()
-#     marqo_index = None
-
-# if marqo_index is None:
-#     mq.create_index("clever-cloud", settings=marqo_settings)
-#     print("Created Marqo index 'clever-cloud'")
-
-# file_name = "example.txt"
-# absolute_path = os.path.abspath(file_name)
-
-
-
 @app.route('/')
 def hello():
     return 'Hello world with Flask'
@@ -117,75 +99,6 @@ def login():
             return jsonify({"status": "error", "message": "Invalid credentials."}), 401
     finally:
         cur.close()
-
-# @app.route('/login', methods=['POST'])
-# def login():
-#     credentials = request.get_json()
-#     email = credentials.get('email')
-#     provided_hash = credentials.get('password')  # Assuming this is the hash received from the frontend
-
-#     # Check if email and password(hash) are provided
-#     if not all([email, provided_hash]):
-#         return jsonify({"status": "error", "message": "Missing email or password."}), 400
-
-#     cur = db_connect.cursor()
-#     try:
-#         # Retrieve user by email
-#         cur.execute("SELECT password FROM users WHERE email = %s", (email,))
-#         user = cur.fetchone()
-
-#         # Check if the user was found
-#         if user is None:
-#             return jsonify({"status": "error", "message": "User not found."}), 404
-
-#         # User found, now compare the password hashes
-#         stored_hash = user[0]
-#         if stored_hash == provided_hash:
-#             # Hashes match, login success
-#             return jsonify({"status": "success", "message": "Login successful!"}), 200
-#         else:
-#             # Hashes do not match
-#             return jsonify({"status": "error", "message": "Invalid credentials."}), 401
-#     except Exception as e:
-#         return jsonify({"status": "error", "message": str(e)}), 500
-#     finally:
-#         cur.close()  # Always close the cursor
-
-
-
-# @app.route('/register', methods=['POST'])
-# def register():
-#     # Get registration data from the request
-#     registration_data = request.get_json()
-
-#     # Extract and validate the data here...
-#     name = registration_data.get('name')
-#     email = registration_data.get('email')
-#     hashed_password = registration_data.get('password')  # Assuming this is already hashed by the frontend
-#     terms_agreed = registration_data.get('termsAgreed', False)
-    
-#     # Check if all the fields are provided
-#     if not all([name, email, hashed_password, terms_agreed]):
-#         return jsonify({"status": "error", "message": "Missing fields or terms not agreed."}), 400
-
-#     # Insert the new user into the database
-#     cur = db_connect.cursor()
-#     try:
-#         # Use parameterized queries to prevent SQL injection
-#         cur.execute("""
-#             INSERT INTO users (name, email, password)
-#             VALUES (%s, %s, %s)
-#         """, (name, email, hashed_password))
-#         db_connect.commit()  # Commit the transaction
-#         return jsonify({"status": "success", "message": "Registration successful!"}), 201
-#     except psycopg2.IntegrityError:
-#         db_connect.rollback()  # Rollback the transaction on error
-#         return jsonify({"status": "error", "message": "This email is already registered."}), 409
-#     except Exception as e:
-#         db_connect.rollback()
-#         return jsonify({"status": "error", "message": str(e)}), 500
-#     finally:
-#         cur.close()  # Close the cursor
         
 @app.route('/register', methods=['POST'])
 def register():
@@ -320,24 +233,42 @@ def upload_file():
         
 
 
-# /get-file?id={file_name}
+# # /get-file?id={file_name}
+# @app.route('/get-file', methods=['GET'])
+# def get_file():
+#     # Get the file name from the query parameters
+#     file_name = request.args.get('id')
+
+#     if not file_name:
+#         return jsonify({"status": "error", "message": "No file name provided."}), 400
+    
+#     # Get the file from MinIO
+#     try:
+#         file_data = minio_client.get_object(bucket_name, file_name)
+#     except Exception as e:
+#         return jsonify({"status": "error", "message": str(e)}), 500
+
+#     # Return the file data as a response
+#     return file_data.read()
+
 @app.route('/get-file', methods=['GET'])
 def get_file():
-    # Get the file name from the query parameters
     file_name = request.args.get('id')
-
     if not file_name:
         return jsonify({"status": "error", "message": "No file name provided."}), 400
-    
-    # Get the file from MinIO
+
     try:
         file_data = minio_client.get_object(bucket_name, file_name)
+        file_stream = io.BytesIO(file_data.read())  # Read the file stream from MinIO and wrap it in a BytesIO object
+        file_stream.seek(0)  # Reset stream position to the beginning
+        return send_file(
+            file_stream,
+            as_attachment=True,
+            download_name=file_name,
+            mimetype='application/pdf'  # Set the MIME type to PDF since we are assuming the file is a PDF
+        )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-    # Return the file data as a response
-    return file_data.read()
-
 
 
 if __name__ == '__main__':
