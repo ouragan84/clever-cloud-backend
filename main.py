@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import os
 import random
 import string
+import time
 
 
 app = Flask(__name__)
@@ -47,21 +48,8 @@ if not found:
 else:
     print("Bucket", bucket_name, "already exists")
 
-# Upload the file, renaming it in the process
-minio_client.fput_object(
-    bucket_name, destination_file, source_file,
-)
-
+# Connect to Marqo
 mq = marqo.Client(url=os.getenv('MARQO_URL'))
-
-# Called with the file name from MinIO
-def get_file_from_minio(file_name):
-    # Get the file from MinIO
-    file_data = minio_client.get_object(
-        os.getenv('MINIO_BUCKET'),
-        file_name
-    )
-    return file_data
 
 @app.route('/')
 def hello():
@@ -194,3 +182,81 @@ def get_all_users():
     
     # Return the users data as a JSON response
     return jsonify({"status": "success", "users": users})
+
+
+
+@app.route('/upload-file', methods=['POST', 'OPTIONS'])
+def upload_file():
+
+    print("Uploading file...")
+    # Get the file from the request
+    file = request.files['file']
+
+    if not file:
+        print("No file provided.")
+        return jsonify({"status": "error", "message": "No file provided."}), 400
+    else:
+        print("File provided:", file.filename)
+
+    file_name = file.filename
+    extention = file_name.split('.')[-1].lower()
+
+    print("File name:", file_name)
+    
+    # get file type as document or image
+    if extention in ['jpg', 'jpeg', 'png', 'gif']:
+        file_type = 'image'
+    elif extention in ['pdf', 'doc', 'docx', 'txt']:
+        file_type = 'document'
+    else:
+        file_type = 'other'
+
+    content_type = file.content_type
+
+    file_size = file.content_length
+    if file_size > 1024 * 1024 * 50:
+        return jsonify({"status": "error", "message": "File size is too large. Max file size is 50MB."}), 400
+    
+    # Generate a random file name to store in MinIO
+    minio_file_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+    date_uploaded = int(time.time())
+    user_created = "example_user@gmail.com" # TODO: Get the user from the session
+
+    print("Uploading file to MinIO:", minio_file_name)
+
+    # Save the file to MinIO
+    try:
+        minio_client.put_object(
+            bucket_name,
+            minio_file_name,
+            file,
+            file.content_length,
+            content_type
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
+    # Save the file in marqo
+    # TODO
+
+
+# /get-file?id={file_name}
+@app.route('/get-file', methods=['GET'])
+def get_file():
+    # Get the file name from the query parameters
+    file_name = request.args.get('id')
+
+    if not file_name:
+        return jsonify({"status": "error", "message": "No file name provided."}), 400
+    
+    # Get the file from MinIO
+    try:
+        file_data = minio_client.get_object(bucket_name, file_name)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    # Return the file data as a response
+    return file_data.read()
+
+
