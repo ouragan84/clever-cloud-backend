@@ -38,7 +38,7 @@ Login with ROOTUSER and PASSWORD, create a bucket called `clevercloud`.
 Create an Access Key, copy the Access Key and Secret Key for the .env.
 
 
-Set .env to:
+Create file .env to:
 ```
 POSTGRES_HOST=localhost
 POSTGRES_DB=clevercloud
@@ -53,4 +53,6 @@ MINIO_ACCESS_KEY={PASTE_ACCESS_KEY}
 MINIO_SECRET_KEY={PASTE_SECRET_KEY}
 MINIO_BUCKET=clevercloud
 ```
+
+Create a folder called `tmp` in the root of the project.
 

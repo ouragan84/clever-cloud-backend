@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, url_for
 from flask_cors import CORS, cross_origin
 import psycopg2
 import json
@@ -9,6 +9,8 @@ import os
 import random
 import string
 import time
+from werkzeug.utils import secure_filename
+
 
 
 app = Flask(__name__)
@@ -17,6 +19,15 @@ app = Flask(__name__)
 # Allow all origins for all routes. 
 # In production, you would change this to be more restrictive.
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+# ./tmp is the folder where files will be temporarily stored before uploading to MinIO
+UPLOAD_FOLDER = './tmp'
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 
 # Load environment variables from .env file
@@ -50,6 +61,26 @@ else:
 
 # Connect to Marqo
 mq = marqo.Client(url=os.getenv('MARQO_URL'))
+
+# If marqo index 'clever-cloud' is not created, create it.
+# marqo_settings={
+#     "treat_urls_and_pointers_as_images": True,
+#     "model": "openai/clip-vit-large-patch14"
+# }
+# marqo_index = mq.index("clever-cloud")
+
+# if marqo_index.get_settings != marqo_settings:
+#     marqo_index.delete()
+#     marqo_index = None
+
+# if marqo_index is None:
+#     mq.create_index("clever-cloud", settings=marqo_settings)
+#     print("Created Marqo index 'clever-cloud'")
+
+# file_name = "example.txt"
+# absolute_path = os.path.abspath(file_name)
+
+
 
 @app.route('/')
 def hello():
@@ -184,61 +215,52 @@ def get_all_users():
     return jsonify({"status": "success", "users": users})
 
 
-
-@app.route('/upload-file', methods=['POST', 'OPTIONS'])
+@app.route('/upload-file', methods=['POST'])
 def upload_file():
-
     print("Uploading file...")
-    # Get the file from the request
-    file = request.files['file']
+    file = request.files.get('file')
 
     if not file:
-        print("No file provided.")
-        return jsonify({"status": "error", "message": "No file provided."}), 400
-    else:
-        print("File provided:", file.filename)
-
-    file_name = file.filename
-    extention = file_name.split('.')[-1].lower()
-
-    print("File name:", file_name)
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+    if not file or not allowed_file(file.filename):
+        return jsonify({"status": "error", "message": "File extension not allowed"}), 400
     
-    # get file type as document or image
-    if extention in ['jpg', 'jpeg', 'png', 'gif']:
-        file_type = 'image'
-    elif extention in ['pdf', 'doc', 'docx', 'txt']:
-        file_type = 'document'
-    else:
-        file_type = 'other'
 
-    content_type = file.content_type
-
-    file_size = file.content_length
-    if file_size > 1024 * 1024 * 50:
-        return jsonify({"status": "error", "message": "File size is too large. Max file size is 50MB."}), 400
-    
-    # Generate a random file name to store in MinIO
-    minio_file_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-
+    filename = secure_filename(file.filename)
+    minio_file_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], minio_file_name)
+    extension = filename.split('.')[-1].lower()
     date_uploaded = int(time.time())
-    user_created = "example_user@gmail.com" # TODO: Get the user from the session
+    type =  'image' if extension in ['jpg', 'jpeg', 'png', 'gif'] else \
+            'document' if extension in ['pdf', 'doc', 'docx', 'txt'] else \
+            'other'
+    user_created = "user@example.com" #TODO: Get the user from the session
 
-    print("Uploading file to MinIO:", minio_file_name)
-
-    # Save the file to MinIO
     try:
-        minio_client.put_object(
-            bucket_name,
-            minio_file_name,
-            file,
-            file.content_length,
-            content_type
-        )
+        # Saving locally first (optional depending on your use case)
+        file.save(file_path)
+        # Then upload to MinIO
+        with open(file_path, 'rb') as f:
+            minio_client.put_object(
+                bucket_name,
+                minio_file_name,
+                f,
+                os.path.getsize(file_path),
+                file.content_type
+            )
     except Exception as e:
+        os.remove(file_path)  # Remove the temporary file
         return jsonify({"status": "error", "message": str(e)}), 500
     
-    # Save the file in marqo
-    # TODO
+
+    print("File uploaded to MinIO:", minio_file_name)
+
+    os.remove(file_path)  # Remove the temporary file
+        
+    return jsonify({"status": "success", "message": "File uploaded successfully"}), 201
+        
 
 
 # /get-file?id={file_name}
@@ -259,4 +281,11 @@ def get_file():
     # Return the file data as a response
     return file_data.read()
 
+
+
+if __name__ == '__main__':
+    # delete all the files in the tmp folder
+    for file in os.listdir(UPLOAD_FOLDER):
+        os.remove(os.path.join(UPLOAD_FOLDER, file))
+    app.run(debug=True)
 
