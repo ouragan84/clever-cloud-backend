@@ -12,8 +12,15 @@ import time
 from werkzeug.utils import secure_filename
 
 
+import jwt
+import datetime
+from flask_jwt_extended import JWTManager, create_access_token
 
 app = Flask(__name__)
+
+# Setup JWT
+app.config["JWT_SECRET_KEY"] = os.getenv('JWT_SECRET_KEY')  # Change this to a real secret in production
+jwt = JWTManager(app)
 
 
 # Allow all origins for all routes. 
@@ -90,69 +97,119 @@ def hello():
 def login():
     credentials = request.get_json()
     email = credentials.get('email')
-    provided_hash = credentials.get('password')  # Assuming this is the hash received from the frontend
+    provided_hash = credentials.get('password')
 
-    # Check if email and password(hash) are provided
     if not all([email, provided_hash]):
         return jsonify({"status": "error", "message": "Missing email or password."}), 400
 
     cur = db_connect.cursor()
     try:
-        # Retrieve user by email
         cur.execute("SELECT password FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
-
-        # Check if the user was found
         if user is None:
             return jsonify({"status": "error", "message": "User not found."}), 404
 
-        # User found, now compare the password hashes
         stored_hash = user[0]
         if stored_hash == provided_hash:
-            # Hashes match, login success
-            return jsonify({"status": "success", "message": "Login successful!"}), 200
+            access_token = create_access_token(identity=email)
+            return jsonify(access_token=access_token), 200
         else:
-            # Hashes do not match
             return jsonify({"status": "error", "message": "Invalid credentials."}), 401
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
     finally:
-        cur.close()  # Always close the cursor
+        cur.close()
+
+# @app.route('/login', methods=['POST'])
+# def login():
+#     credentials = request.get_json()
+#     email = credentials.get('email')
+#     provided_hash = credentials.get('password')  # Assuming this is the hash received from the frontend
+
+#     # Check if email and password(hash) are provided
+#     if not all([email, provided_hash]):
+#         return jsonify({"status": "error", "message": "Missing email or password."}), 400
+
+#     cur = db_connect.cursor()
+#     try:
+#         # Retrieve user by email
+#         cur.execute("SELECT password FROM users WHERE email = %s", (email,))
+#         user = cur.fetchone()
+
+#         # Check if the user was found
+#         if user is None:
+#             return jsonify({"status": "error", "message": "User not found."}), 404
+
+#         # User found, now compare the password hashes
+#         stored_hash = user[0]
+#         if stored_hash == provided_hash:
+#             # Hashes match, login success
+#             return jsonify({"status": "success", "message": "Login successful!"}), 200
+#         else:
+#             # Hashes do not match
+#             return jsonify({"status": "error", "message": "Invalid credentials."}), 401
+#     except Exception as e:
+#         return jsonify({"status": "error", "message": str(e)}), 500
+#     finally:
+#         cur.close()  # Always close the cursor
 
 
+
+# @app.route('/register', methods=['POST'])
+# def register():
+#     # Get registration data from the request
+#     registration_data = request.get_json()
+
+#     # Extract and validate the data here...
+#     name = registration_data.get('name')
+#     email = registration_data.get('email')
+#     hashed_password = registration_data.get('password')  # Assuming this is already hashed by the frontend
+#     terms_agreed = registration_data.get('termsAgreed', False)
+    
+#     # Check if all the fields are provided
+#     if not all([name, email, hashed_password, terms_agreed]):
+#         return jsonify({"status": "error", "message": "Missing fields or terms not agreed."}), 400
+
+#     # Insert the new user into the database
+#     cur = db_connect.cursor()
+#     try:
+#         # Use parameterized queries to prevent SQL injection
+#         cur.execute("""
+#             INSERT INTO users (name, email, password)
+#             VALUES (%s, %s, %s)
+#         """, (name, email, hashed_password))
+#         db_connect.commit()  # Commit the transaction
+#         return jsonify({"status": "success", "message": "Registration successful!"}), 201
+#     except psycopg2.IntegrityError:
+#         db_connect.rollback()  # Rollback the transaction on error
+#         return jsonify({"status": "error", "message": "This email is already registered."}), 409
+#     except Exception as e:
+#         db_connect.rollback()
+#         return jsonify({"status": "error", "message": str(e)}), 500
+#     finally:
+#         cur.close()  # Close the cursor
+        
 @app.route('/register', methods=['POST'])
 def register():
-    # Get registration data from the request
     registration_data = request.get_json()
-
-    # Extract and validate the data here...
     name = registration_data.get('name')
     email = registration_data.get('email')
-    hashed_password = registration_data.get('password')  # Assuming this is already hashed by the frontend
+    hashed_password = registration_data.get('password')
     terms_agreed = registration_data.get('termsAgreed', False)
-    
-    # Check if all the fields are provided
-    if not all([name, email, hashed_password, terms_agreed]):
-        return jsonify({"status": "error", "message": "Missing fields or terms not agreed."}), 400
 
-    # Insert the new user into the database
+    if not all([name, email, hashed_password, terms_agreed]):
+        return jsonify({"status": "error", "message": "All fields must be filled and terms agreed."}), 400
+
     cur = db_connect.cursor()
     try:
-        # Use parameterized queries to prevent SQL injection
-        cur.execute("""
-            INSERT INTO users (name, email, password)
-            VALUES (%s, %s, %s)
-        """, (name, email, hashed_password))
-        db_connect.commit()  # Commit the transaction
-        return jsonify({"status": "success", "message": "Registration successful!"}), 201
+        cur.execute("INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
+                    (name, email, hashed_password))
+        db_connect.commit()
+        access_token = create_access_token(identity=email)
+        return jsonify(access_token=access_token), 201
     except psycopg2.IntegrityError:
-        db_connect.rollback()  # Rollback the transaction on error
-        return jsonify({"status": "error", "message": "This email is already registered."}), 409
-    except Exception as e:
         db_connect.rollback()
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "Email already registered."}), 409
     finally:
-        cur.close()  # Close the cursor
+        cur.close()
 
 @app.route('/print-user-columns', methods=['GET'])
 def print_user_columns():
