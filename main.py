@@ -23,9 +23,43 @@ import jwt
 import datetime
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
-import PyPDF2
+import google.generativeai as genai
+import requests
+from PyPDF2 import PdfReader
 
+# genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+genai.configure(api_key='AIzaSyCLHt9_x85KmI3wl7mysoWsz41f2VJkGHc')
 
+def load_pdf_from_url(url='https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf'):
+    # Download the PDF file
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Save the PDF to a temporary file
+    temp_pdf_path = 'temp_document.pdf'
+    with open(temp_pdf_path, 'wb') as f:
+        f.write(response.content)
+
+    # Load the PDF file using PyPDF2
+    reader = PdfReader(temp_pdf_path)
+    pages = [page.extract_text() for page in reader.pages]  # Extract text from each page
+
+    # Optionally, remove the temporary file if not needed
+    os.remove(temp_pdf_path)
+
+    return pages
+
+def get_summary(url):
+    # Load a publicly accessible PDF document from the Internet
+    pages = load_pdf_from_url(url)
+    for page_text in pages:
+        print(page_text)  # Print the text of each page
+    # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+    model = genai.GenerativeModel('gemini-pro')
+    response = model.generate_content(f"In a single paragraph of no more that 300 characters, summarize the following text: \n {pages}:")
+
+    print('SUMMARY: ')
+    print(response.text)
 
 app = Flask(__name__)
 
@@ -395,26 +429,6 @@ def get_all():
     except Exception as e:
         app.logger.exception("An error occurred while querying pc_index.")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-
-# # /get-file?id={file_name}
-# @app.route('/get-file', methods=['GET'])
-# def get_file():
-#     # Get the file name from the query parameters
-#     file_name = request.args.get('id')
-
-#     if not file_name:
-#         return jsonify({"status": "error", "message": "No file name provided."}), 400
-    
-#     # Get the file from MinIO
-#     try:
-#         file_data = minio_client.get_object(bucket_name, file_name)
-#     except Exception as e:
-#         return jsonify({"status": "error", "message": str(e)}), 500
-
-#     # Return the file data as a response
-#     return file_data.read()
 
 @app.route('/get-file', methods=['GET'])
 def get_file():
