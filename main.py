@@ -12,11 +12,20 @@ import time
 from werkzeug.utils import secure_filename
 import io
 
-
+import torch
+from PIL import Image
+from transformers import AlignProcessor, AlignModel
+import numpy as np
+from sklearn.decomposition import PCA
+from pinecone import Pinecone, ServerlessSpec
 
 import jwt
 import datetime
 from flask_jwt_extended import JWTManager, create_access_token
+
+import PyPDF2
+
+
 
 app = Flask(__name__)
 
@@ -69,7 +78,93 @@ else:
     print("Bucket", bucket_name, "already exists")
 
 # Connect to Marqo
-mq = marqo.Client(url=os.getenv('MARQO_URL'))
+# mq = marqo.Client(url=os.getenv('MARQO_URL'))
+
+# Connect to Pinecone
+pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+
+pc_index_name="clever-cloud-demo"
+if not pc_index_name in pc.list_indexes().names():
+    pc.create_index(
+        name=pc_index_name,
+        dimension=640, # Replace with your model dimensions
+        metric="dotproduct", # Replace with your model metric
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        ) 
+    )
+else:
+    print(f"Index {pc_index_name} already exists.")
+
+pc_index = pc.Index(pc_index_name)
+
+# Initialize processor and model
+embedding_processor = AlignProcessor.from_pretrained("kakaobrain/align-base")
+embedding_model = AlignModel.from_pretrained("kakaobrain/align-base")
+
+
+def generate_text_embedding(text):
+    text_inputs = embedding_processor(text=text, return_tensors="pt")
+    text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
+    # normalize the embeddings to unit length
+    text_embeds /= np.linalg.norm(text_embeds)
+    # convert to list
+    text_embeds = text_embeds.tolist()
+    return text_embeds
+
+def generate_image_embedding(image_path):
+    image = Image.open(image_path).convert('RGB')
+    image_inputs = embedding_processor(images=image, return_tensors="pt")
+    image_embeds = embedding_model.get_image_features(**image_inputs).detach().numpy().tolist()[0]
+    # normalize the embeddings to unit length
+    image_embeds /= np.linalg.norm(image_embeds)
+    # convert to list
+    image_embeds = image_embeds.tolist()
+    return image_embeds
+
+
+# Initialize PCA
+pca = PCA(n_components=3)
+
+# Train PCA function
+def train_pca():
+    # Generate a set of random texts and/or images to create initial embeddings for PCA training
+    sample_texts = [
+        "a beige puppy sitting in the grass",
+        "Movie review: The movie was a great success",
+        "The cat in the hat",
+        "A story about children playing in the park",
+        "A dog sitting in the grass",
+        "Facts about the moon",
+        "History of the United States",
+        "A recipe for chocolate cake",
+        "The best places to visit in the world",
+        "The best restaurants in New York City",
+        "Physics Homework: Newton's Laws of Motion",
+        "The life of Albert Einstein",
+        "The history of the internet",
+        "Tax summary for 2021",
+        "Insurance policy for homeowners",
+    ]
+    embeddings = []
+    for text in sample_texts:
+        embeddings.append(generate_text_embedding(text))
+    
+    # Fit PCA on collected embeddings
+    pca.fit(np.array(embeddings))
+
+def get_pca_representation(embeddings):
+    pca_rep = pca.transform(embeddings)
+
+    # convert to list of strings ['1.234', '2.345', '3.456']
+    pca_rep = [str(val) for val in pca_rep[0]]
+    return pca_rep
+
+train_pca()
+
+
+
 
 @app.route('/')
 def hello():
@@ -207,6 +302,7 @@ def upload_file():
             'document' if extension in ['pdf', 'doc', 'docx', 'txt'] else \
             'other'
     user_created = "user@example.com" #TODO: Get the user from the session
+    
 
     try:
         # Saving locally first (optional depending on your use case)
@@ -227,6 +323,52 @@ def upload_file():
 
     print("File uploaded to MinIO:", minio_file_name)
 
+    content_embedding = []
+    if type == 'image':
+        content_embedding = generate_image_embedding(file_path)
+    if type == 'document':
+        if extension == 'pdf':
+            with open(file_path, 'rb') as pdf_file:
+                read_pdf = PyPDF2.PdfReader(pdf_file)
+                number_of_pages = len(read_pdf.pages)
+                text = ""
+                for page_number in range(number_of_pages):
+                    page = read_pdf.pages[page_number]
+                    text += page.extract_text()
+                content_embedding = generate_text_embedding(text)
+        else:
+            with open(file_path, 'r') as f:
+                text = f.read()
+                content_embedding = generate_text_embedding(text)
+    else:
+        content_embedding = generate_text_embedding("File that is not an image or document")
+        
+    pca_representation = get_pca_representation([content_embedding])
+
+    try:
+        pc_index.upsert(
+            vectors=[
+                {
+                    "id": minio_file_name,
+                    "values": content_embedding, 
+                    "metadata": {
+                        "file_name": filename,
+                        "date_uploaded": date_uploaded,
+                        "type": type,
+                        "user_created": user_created,
+                        "pca_representation": pca_representation,
+                        "date_modified": date_uploaded,
+                        "id": minio_file_name,
+                        "extension": extension
+                    }
+                }
+            ],
+            namespace="default"
+        )
+    except Exception as e:
+        os.remove(file_path)
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
     os.remove(file_path)  # Remove the temporary file
         
     return jsonify({"status": "success", "message": "File uploaded successfully"}), 201
