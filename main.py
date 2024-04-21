@@ -5,6 +5,7 @@ import json
 import marqo
 from minio import Minio
 from dotenv import load_dotenv
+import PyPDF2
 import os
 import random
 import string
@@ -24,8 +25,12 @@ import jwt
 import datetime
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
-import PyPDF2
+import google.generativeai as genai
+import requests
 
+
+# genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+genai.configure(api_key='AIzaSyCLHt9_x85KmI3wl7mysoWsz41f2VJkGHc')
 
 
 app = Flask(__name__)
@@ -105,10 +110,61 @@ embedding_processor = AlignProcessor.from_pretrained("kakaobrain/align-base")
 embedding_model = AlignModel.from_pretrained("kakaobrain/align-base")
 
 
+def load_pdf_from_url(url='https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf'):
+    # Download the PDF file
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Save the PDF to a temporary file
+    temp_pdf_path = 'temp_document.pdf'
+    with open(temp_pdf_path, 'wb') as f:
+        f.write(response.content)
+
+    # Load the PDF file using PyPDF2
+    reader = PyPDF2.PdfReader(temp_pdf_path)
+    pages = [page.extract_text() for page in reader.pages]  # Extract text from each page
+
+    # Optionally, remove the temporary file if not needed
+    os.remove(temp_pdf_path)
+
+    return pages
+
+# def get_summary(url):
+#     # Load a publicly accessible PDF document from the Internet
+#     pages = load_pdf_from_url(url)
+#     for page_text in pages:
+#         print(page_text)  # Print the text of each page
+#     # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+#     model = genai.GenerativeModel('gemini-pro')
+#     response = model.generate_content(f"In a single paragraph of no more that 300 characters, summarize the following text: \n {pages}:")
+
+#     print('SUMMARY: ')
+#     print(response.text)
+
+def get_summary(url):
+    text = load_pdf_from_url(url)
+    # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+    model = genai.GenerativeModel('gemini-pro')
+    prompt = f"In a single paragraph of no more than 200 words, summarize the following text: \n{text}"
+    response = model.generate_content(prompt)
+
+    print('SUMMARY: ', response.text)
+    return response.text
+
+# def generate_text_embedding(text):
+#     text = text[:512]
+#     print('text: ', text)
+#     text_inputs = embedding_processor(text=text, return_tensors="pt")
+#     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
+#     # normalize the embeddings to unit length
+#     text_embeds /= np.linalg.norm(text_embeds)
+#     # convert to list
+#     text_embeds = text_embeds.tolist()
+#     return text_embeds
+
 def generate_text_embedding(text):
-    # Cheap way to limit the text length for the model
+    # text = get_summary('https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf')
     text = text[:512]
-    
     text_inputs = embedding_processor(text=text, return_tensors="pt")
     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
     # normalize the embeddings to unit length
@@ -267,6 +323,62 @@ def print_user_columns():
     # Return the column names as a JSON response, for example
     return jsonify({"status": "success", "columns": column_names})
 
+
+
+
+def load_pdf_from_url(url='https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf'):
+    # Download the PDF file
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Save the PDF to a temporary file
+    temp_pdf_path = 'temp_document.pdf'
+    with open(temp_pdf_path, 'wb') as f:
+        f.write(response.content)
+
+    # Load the PDF file using PyPDF2
+    reader = PyPDF2.PdfReader(temp_pdf_path)
+    pages = [page.extract_text() for page in reader.pages]  # Extract text from each page
+
+    # Optionally, remove the temporary file if not needed
+    os.remove(temp_pdf_path)
+
+    return pages
+
+# def get_summary(url):
+#     # Load a publicly accessible PDF document from the Internet
+#     pages = load_pdf_from_url(url)
+#     for page_text in pages:
+#         print(page_text)  # Print the text of each page
+#     # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+#     model = genai.GenerativeModel('gemini-pro')
+#     response = model.generate_content(f"In a single paragraph of no more that 300 characters, summarize the following text: \n {pages}:")
+
+#     print('SUMMARY: ')
+#     print(response.text)
+
+def get_summary(url):
+    text = load_pdf_from_url(url)
+    # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+    model = genai.GenerativeModel('gemini-pro')
+    prompt = f"In a single paragraph of no more than 200 words, summarize the following text: \n{text}"
+    response = model.generate_content(prompt)
+
+    print('SUMMARY: ', response.text)
+    return response.text
+
+# def generate_text_embedding(text):
+#     text = text[:512]
+#     print('text: ', text)
+#     text_inputs = embedding_processor(text=text, return_tensors="pt")
+#     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
+#     # normalize the embeddings to unit length
+#     text_embeds /= np.linalg.norm(text_embeds)
+#     # convert to list
+#     text_embeds = text_embeds.tolist()
+#     return text_embeds
+
+
 @app.route('/get-all-users', methods=['GET'])
 def get_all_users():
     # Define the cursor to interact with the database
@@ -420,26 +532,6 @@ def get_all():
         app.logger.exception("An error occurred while querying pc_index.")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-
-# # /get-file?id={file_name}
-# @app.route('/get-file', methods=['GET'])
-# def get_file():
-#     # Get the file name from the query parameters
-#     file_name = request.args.get('id')
-
-#     if not file_name:
-#         return jsonify({"status": "error", "message": "No file name provided."}), 400
-    
-#     # Get the file from MinIO
-#     try:
-#         file_data = minio_client.get_object(bucket_name, file_name)
-#     except Exception as e:
-#         return jsonify({"status": "error", "message": str(e)}), 500
-
-#     # Return the file data as a response
-#     return file_data.read()
-
 @app.route('/get-file', methods=['GET'])
 def get_file():
     file_name = request.args.get('id')
@@ -458,95 +550,37 @@ def get_file():
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-    
 
-@app.route('/search', methods=['POST'])
-def search():
-    search_data = request.get_json()
+@app.route('/summarize-pdf', methods=['GET'])
+def summarize_pdf():
+    file_name = request.args.get('id')
+    if not file_name:
+        return jsonify({"status": "error", "message": "No file name provided."}), 400
 
-    # print(search_data)
+    try:
+        file_data = minio_client.get_object(bucket_name, file_name)
+        file_stream = io.BytesIO(file_data.read())  # Read the file stream from MinIO and wrap it in a BytesIO object
+        file_stream.seek(0)  # Reset stream position to the beginning
 
-    results = []
+        # Save to temporary file for PDF processing
+        temp_pdf_path = 'temp_document.pdf'
+        with open(temp_pdf_path, 'wb') as f:
+            f.write(file_stream.read())
 
-    if search_data.get('method') == 'text':
-        # get request embedding and search the index
-        query = search_data.get('query')
-        query_embedding = generate_text_embedding(query)
-        pca_representation = get_pca_representation([query_embedding])
+        reader = PyPDF2.PdfReader(temp_pdf_path)
+        full_text = " ".join([page.extract_text() for page in reader.pages if page.extract_text()])
 
+        os.remove(temp_pdf_path)  # Clean up the temporary file
 
-        print(search_data['type'].items())
+        # Generate summary using an AI model
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"In a single paragraph of no more than 200 words, summarize the following text: \n{full_text}"
+        response = model.generate_content(prompt)
 
-        is_image = False
-        is_document = False
+        return jsonify({"status": "success", "summary": response.text})
 
-        for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
-            if key == 'image' and value:
-                is_image = True
-            if key == 'document' and value:
-                is_document = True
-
-        filter = {}
-
-        if is_image and is_document:
-            filter = {"$or": [{"type": {"$eq": "image"}}, {"type": {"$eq": "document"}}]}
-        elif is_image:
-            filter = {"type": {"$eq": "image"}}
-        elif is_document:
-            filter = {"type": {"$eq": "document"}}
-
-
-        print(filter)
-            
-        results = pc_index.query(
-            vector=query_embedding,
-            top_k=search_data.get('limit', 10),
-            namespace="default",
-            include_metadata=True,
-            include_values=False,
-            filter=filter
-        )
-
-    elif search_data.get('method') == 'image':
-        # save request image to disk in tmp folder
-        image_data = search_data.get('image')
-        base64_string = image_data.split(",")[-1]
-
-        image = Image.open(io.BytesIO(base64.b64decode(base64_string)))
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'search_image.png')
-        image.save(image_path)
-
-        # get image embedding and search the index
-        image_embedding = generate_image_embedding(image_path, debug=True)
-        pca_representation = get_pca_representation([image_embedding])
-
-        # filters = []
-
-        # for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
-        #     if value:
-        #         filters.append({"type": {"$eq": key}})
-        #     else:
-        #         filters.append({"type": {"$ne": key}})
-        
-        results = pc_index.query(
-            vector=image_embedding,
-            top_k=search_data.get('limit', 10),
-            namespace="default",
-            include_metadata=True,
-            include_values=False,
-            # filter={"$and": filters}
-        )
-
-        os.remove(image_path)  # Remove the temporary file
-
-    # Return the search results as well as the PCA representation of the query
-    return jsonify({
-        "query_pca_representation": pca_representation,
-        "results": results.to_dict()
-    })
-
-
-
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == '__main__':
     # delete all the files in the tmp folder
