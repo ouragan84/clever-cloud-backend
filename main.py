@@ -25,7 +25,10 @@ import datetime
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 import PyPDF2
+# import google.generativeai as genai
+# import requests
 
+# genai.configure(api_key='AIzaSyCLHt9_x85KmI3wl7mysoWsz41f2VJkGHc')
 
 
 app = Flask(__name__)
@@ -84,7 +87,7 @@ else:
 # Connect to Pinecone
 pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 
-pc_index_name="clever-cloud-demo"
+pc_index_name="clever-cloud"
 if not pc_index_name in pc.list_indexes().names():
     pc.create_index(
         name=pc_index_name,
