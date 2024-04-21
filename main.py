@@ -11,9 +11,6 @@ import string
 import time
 from werkzeug.utils import secure_filename
 import io
-
-
-
 import jwt
 import datetime
 from flask_jwt_extended import JWTManager, create_access_token
