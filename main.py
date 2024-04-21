@@ -21,7 +21,7 @@ from pinecone import Pinecone, ServerlessSpec
 
 import jwt
 import datetime
-from flask_jwt_extended import JWTManager, create_access_token
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 import PyPDF2
 
@@ -122,6 +122,7 @@ def generate_image_embedding(image_path):
     # convert to list
     image_embeds = image_embeds.tolist()
     return image_embeds
+
 
 
 # Initialize PCA
@@ -281,6 +282,7 @@ def get_all_users():
 
 
 @app.route('/upload-file', methods=['POST'])
+# @jwt_required()
 def upload_file():
     print("Uploading file...")
     file = request.files.get('file')
@@ -301,8 +303,9 @@ def upload_file():
     type =  'image' if extension in ['jpg', 'jpeg', 'png', 'gif'] else \
             'document' if extension in ['pdf', 'doc', 'docx', 'txt'] else \
             'other'
-    user_created = "user@example.com" #TODO: Get the user from the session
     
+    user_created = "user@example.com" #TODO: Get the user from the session
+    # user_created = get_jwt_identity()
 
     try:
         # Saving locally first (optional depending on your use case)
@@ -372,18 +375,25 @@ def upload_file():
     os.remove(file_path)  # Remove the temporary file
         
     return jsonify({"status": "success", "message": "File uploaded successfully"}), 201
-        
+
+
+empty_vector = [0.0] * 640
 
 #Get all metadata
 @app.route('/get-all', methods=['GET'])
 def get_all():
     try:
-        results = pc_index.query(
-            query={"vector": {"type": "match_all"}},
-            namespace="default"
-        )
-        return jsonify(results)
+        if pc_index is None:
+            app.logger.error("pc_index is not initialized.")
+            return jsonify({"status": "error", "message": "pc_index is not initialized"}), 500
+        
+        results = pc_index.query(vector=empty_vector, top_k=1000, namespace="default", include_metadata=True, include_values=False)
+        # print(results.to_dict())
+        # print(results.to_str())
+
+        return jsonify(results.to_dict())
     except Exception as e:
+        app.logger.exception("An error occurred while querying pc_index.")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -420,7 +430,7 @@ def get_file():
             file_stream,
             as_attachment=True,
             download_name=file_name,
-            mimetype='application/pdf'  # Set the MIME type to PDF since we are assuming the file is a PDF
+            mimetype='application/octet-stream'
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
