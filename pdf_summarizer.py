@@ -1,6 +1,10 @@
 import requests
 from ai_engine import UAgentResponse, UAgentResponseType
 from uagents import Protocol, Model, Context, Agent
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Define the PDF Summarization Request model
 class PDFSummarizationRequest(Model):
@@ -18,7 +22,7 @@ def upload_pdf(url, ctx):
     """Uploads a PDF from a URL and returns the document ID."""
     endpoint = "https://pdf.ai/api/v1/upload/url"
     headers = {
-        "X-API-Key": 'eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3MTYyNDk3ODIsImlhdCI6MTcxMzY1Nzc4MiwiaXNzIjoiZmV0Y2guYWkiLCJqdGkiOiJlNDA0MmU1Nzc3MzM4YWNhZWI0YWRhYzMiLCJzY29wZSI6ImF2OnJvIiwic3ViIjoiMjE3YzMwNzcxYTRiMmI2NGZlZWU3MzM4MTY0NWRjZmM5OGY5YmM3OWI0NmNhYzcxIn0.O8AKGCNuos-USRhD9XlZA3JOFtNWD3HXTCybR6U3tk9G4s03LtRKIIkQIFH9ie2udldCC_0n2Cc_h7XIKben5T759djJl2zQEdacA_M1rk5WuN-gDDVNbwV_amvczsaPsfj2lyzWlSVwbzrE2FeM8tNx-3Dg0p1wx2AiG2fokZBJcEdje95faGQkqLlkpFNiZDPpNTu2FxQeD4jAzzTcJfTOhnImHGHfjkFwKMzpwTzQW39nUQ1yWsgP2Cm2TqamSY3eJp8KcVZYgTYrJ6ye_cp-mthMj05kEnP6UyKiFSclDfYFAOmVyNUxzDWIf6rMyhA-HnBu6fc0MFTvaeh2GA'
+        "X-API-Key": os.getenv('FETCH_AI_KEY')
     }
     payload = {
         "url": url,
@@ -37,7 +41,7 @@ def summarize_pdf(doc_id, ctx):
     """Summarizes the uploaded PDF and returns the summary."""
     endpoint = "https://pdf.ai/api/v1/summary"
     headers = {
-        "X-API-Key": 'eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3MTYyNDk3ODIsImlhdCI6MTcxMzY1Nzc4MiwiaXNzIjoiZmV0Y2guYWkiLCJqdGkiOiJlNDA0MmU1Nzc3MzM4YWNhZWI0YWRhYzMiLCJzY29wZSI6ImF2OnJvIiwic3ViIjoiMjE3YzMwNzcxYTRiMmI2NGZlZWU3MzM4MTY0NWRjZmM5OGY5YmM3OWI0NmNhYzcxIn0.O8AKGCNuos-USRhD9XlZA3JOFtNWD3HXTCybR6U3tk9G4s03LtRKIIkQIFH9ie2udldCC_0n2Cc_h7XIKben5T759djJl2zQEdacA_M1rk5WuN-gDDVNbwV_amvczsaPsfj2lyzWlSVwbzrE2FeM8tNx-3Dg0p1wx2AiG2fokZBJcEdje95faGQkqLlkpFNiZDPpNTu2FxQeD4jAzzTcJfTOhnImHGHfjkFwKMzpwTzQW39nUQ1yWsgP2Cm2TqamSY3eJp8KcVZYgTYrJ6ye_cp-mthMj05kEnP6UyKiFSclDfYFAOmVyNUxzDWIf6rMyhA-HnBu6fc0MFTvaeh2GA'
+        "X-API-Key": os.getenv('FETCH_AI_KEY')
     }
     payload = {
         "docId": doc_id,
@@ -55,7 +59,7 @@ def delete_pdf(doc_id, ctx):
     """Deletes the uploaded PDF."""
     endpoint = "https://pdf.ai/api/v1/delete"
     headers = {
-        "X-API-Key": 'eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3MTYyNDk3ODIsImlhdCI6MTcxMzY1Nzc4MiwiaXNzIjoiZmV0Y2guYWkiLCJqdGkiOiJlNDA0MmU1Nzc3MzM4YWNhZWI0YWRhYzMiLCJzY29wZSI6ImF2OnJvIiwic3ViIjoiMjE3YzMwNzcxYTRiMmI2NGZlZWU3MzM4MTY0NWRjZmM5OGY5YmM3OWI0NmNhYzcxIn0.O8AKGCNuos-USRhD9XlZA3JOFtNWD3HXTCybR6U3tk9G4s03LtRKIIkQIFH9ie2udldCC_0n2Cc_h7XIKben5T759djJl2zQEdacA_M1rk5WuN-gDDVNbwV_amvczsaPsfj2lyzWlSVwbzrE2FeM8tNx-3Dg0p1wx2AiG2fokZBJcEdje95faGQkqLlkpFNiZDPpNTu2FxQeD4jAzzTcJfTOhnImHGHfjkFwKMzpwTzQW39nUQ1yWsgP2Cm2TqamSY3eJp8KcVZYgTYrJ6ye_cp-mthMj05kEnP6UyKiFSclDfYFAOmVyNUxzDWIf6rMyhA-HnBu6fc0MFTvaeh2GA'
+        "X-API-Key": os.getenv('FETCH_AI_KEY')
     }
     payload = {
         "docId": doc_id
