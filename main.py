@@ -282,7 +282,7 @@ def get_all_users():
 
 
 @app.route('/upload-file', methods=['POST'])
-# @jwt_required()
+@jwt_required()
 def upload_file():
     print("Uploading file...")
     file = request.files.get('file')
@@ -304,8 +304,8 @@ def upload_file():
             'document' if extension in ['pdf', 'doc', 'docx', 'txt'] else \
             'other'
     
-    user_created = "user@example.com" #TODO: Get the user from the session
-    # user_created = get_jwt_identity()
+    # user_created = "user@example.com" #TODO: Get the user from the session
+    user_created = get_jwt_identity()
 
     try:
         # Saving locally first (optional depending on your use case)
