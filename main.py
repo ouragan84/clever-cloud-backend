@@ -474,13 +474,29 @@ def search():
         query_embedding = generate_text_embedding(query)
         pca_representation = get_pca_representation([query_embedding])
 
-        # filters = []
 
-        # for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
-        #     if value:
-        #         filters.append({"type": {"$eq": key}})
-        #     else:
-        #         filters.append({"type": {"$ne": key}})
+        print(search_data['type'].items())
+
+        is_image = False
+        is_document = False
+
+        for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
+            if key == 'image' and value:
+                is_image = True
+            if key == 'document' and value:
+                is_document = True
+
+        filter = {}
+
+        if is_image and is_document:
+            filter = {"$or": [{"type": {"$eq": "image"}}, {"type": {"$eq": "document"}}]}
+        elif is_image:
+            filter = {"type": {"$eq": "image"}}
+        elif is_document:
+            filter = {"type": {"$eq": "document"}}
+
+
+        print(filter)
             
         results = pc_index.query(
             vector=query_embedding,
@@ -488,7 +504,7 @@ def search():
             namespace="default",
             include_metadata=True,
             include_values=False,
-            # filter={"$and": filters}
+            filter=filter
         )
 
     elif search_data.get('method') == 'image':
