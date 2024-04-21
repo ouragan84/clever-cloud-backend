@@ -106,6 +106,9 @@ embedding_model = AlignModel.from_pretrained("kakaobrain/align-base")
 
 
 def generate_text_embedding(text):
+    # Cheap way to limit the text length for the model
+    text = text[:512]
+    
     text_inputs = embedding_processor(text=text, return_tensors="pt")
     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
     # normalize the embeddings to unit length
@@ -114,14 +117,30 @@ def generate_text_embedding(text):
     text_embeds = text_embeds.tolist()
     return text_embeds
 
-def generate_image_embedding(image_path):
+def generate_image_embedding(image_path, debug=False):
     image = Image.open(image_path).convert('RGB')
+
+    # print("\n\n\nImage size:", image.size)
+    # print("Image mode:", image.mode)
+    # image.show()
+
     image_inputs = embedding_processor(images=image, return_tensors="pt")
+
+    # print("Image inputs Shape:", image_inputs['pixel_values'].shape)
+    # print("First 10 pixel values:", image_inputs['pixel_values'][0][:10])
+
     image_embeds = embedding_model.get_image_features(**image_inputs).detach().numpy().tolist()[0]
+
+    # print("Image embeddings Shape:", len(image_embeds))
+    # print("First 10 image embeddings:", image_embeds[:10])
+
     # normalize the embeddings to unit length
     image_embeds /= np.linalg.norm(image_embeds)
     # convert to list
     image_embeds = image_embeds.tolist()
+
+    # print("Normalized Image embeddings Shape:", len(image_embeds))
+    # print("First 10 normalized image embeddings:", image_embeds[:10])
     return image_embeds
 
 
@@ -283,7 +302,7 @@ def get_all_users():
 
 
 @app.route('/upload-file', methods=['POST'])
-@jwt_required()
+# @jwt_required()
 def upload_file():
     print("Uploading file...")
     file = request.files.get('file')
@@ -305,8 +324,8 @@ def upload_file():
             'document' if extension in ['pdf', 'doc', 'docx', 'txt'] else \
             'other'
     
-    # user_created = "user@example.com" #TODO: Get the user from the session
-    user_created = get_jwt_identity()
+    user_created = "user@example.com" #TODO: Get the user from the session
+    # user_created = get_jwt_identity()
 
     try:
         # Saving locally first (optional depending on your use case)
@@ -329,8 +348,8 @@ def upload_file():
 
     content_embedding = []
     if type == 'image':
-        content_embedding = generate_image_embedding(file_path)
-    if type == 'document':
+        content_embedding = generate_image_embedding(file_path, debug=True)
+    elif type == 'document':
         if extension == 'pdf':
             with open(file_path, 'rb') as pdf_file:
                 read_pdf = PyPDF2.PdfReader(pdf_file)
@@ -348,6 +367,9 @@ def upload_file():
         content_embedding = generate_text_embedding("File that is not an image or document")
         
     pca_representation = get_pca_representation([content_embedding])
+
+    print("Content embedding (first 10 dimentions):", content_embedding[:10])
+    print("PCA representation:", pca_representation)
 
     try:
         pc_index.upsert(
@@ -383,6 +405,7 @@ empty_vector = [0.0] * 640
 #Get all metadata
 @app.route('/get-all', methods=['GET'])
 def get_all():
+    print("Getting all metadata...")
     try:
         if pc_index is None:
             app.logger.error("pc_index is not initialized.")
@@ -441,7 +464,7 @@ def get_file():
 def search():
     search_data = request.get_json()
 
-    print(search_data)
+    # print(search_data)
 
     results = []
 
@@ -471,12 +494,14 @@ def search():
     elif search_data.get('method') == 'image':
         # save request image to disk in tmp folder
         image_data = search_data.get('image')
-        image = Image.open(io.BytesIO(base64.b64decode(image_data)))
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'search_image.jpg')
+        base64_string = image_data.split(",")[-1]
+
+        image = Image.open(io.BytesIO(base64.b64decode(base64_string)))
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'search_image.png')
         image.save(image_path)
 
         # get image embedding and search the index
-        image_embedding = generate_image_embedding(image_path)
+        image_embedding = generate_image_embedding(image_path, debug=True)
         pca_representation = get_pca_representation([image_embedding])
 
         # filters = []
@@ -488,7 +513,7 @@ def search():
         #         filters.append({"type": {"$ne": key}})
         
         results = pc_index.query(
-            vector=query_embedding,
+            vector=image_embedding,
             top_k=search_data.get('limit', 10),
             namespace="default",
             include_metadata=True,
