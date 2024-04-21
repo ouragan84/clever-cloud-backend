@@ -11,6 +11,7 @@ import string
 import time
 from werkzeug.utils import secure_filename
 import io
+import base64
 
 import torch
 from PIL import Image
@@ -434,6 +435,76 @@ def get_file():
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+    
+
+@app.route('/search', methods=['POST'])
+def search():
+    search_data = request.get_json()
+
+    print(search_data)
+
+    results = []
+
+    if search_data.get('method') == 'text':
+        # get request embedding and search the index
+        query = search_data.get('query')
+        query_embedding = generate_text_embedding(query)
+        pca_representation = get_pca_representation([query_embedding])
+
+        # filters = []
+
+        # for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
+        #     if value:
+        #         filters.append({"type": {"$eq": key}})
+        #     else:
+        #         filters.append({"type": {"$ne": key}})
+            
+        results = pc_index.query(
+            vector=query_embedding,
+            top_k=search_data.get('limit', 10),
+            namespace="default",
+            include_metadata=True,
+            include_values=False,
+            # filter={"$and": filters}
+        )
+
+    elif search_data.get('method') == 'image':
+        # save request image to disk in tmp folder
+        image_data = search_data.get('image')
+        image = Image.open(io.BytesIO(base64.b64decode(image_data)))
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'search_image.jpg')
+        image.save(image_path)
+
+        # get image embedding and search the index
+        image_embedding = generate_image_embedding(image_path)
+        pca_representation = get_pca_representation([image_embedding])
+
+        # filters = []
+
+        # for key, value in search_data['type'].items():  # Use ['type'] to access dictionary
+        #     if value:
+        #         filters.append({"type": {"$eq": key}})
+        #     else:
+        #         filters.append({"type": {"$ne": key}})
+        
+        results = pc_index.query(
+            vector=query_embedding,
+            top_k=search_data.get('limit', 10),
+            namespace="default",
+            include_metadata=True,
+            include_values=False,
+            # filter={"$and": filters}
+        )
+
+        os.remove(image_path)  # Remove the temporary file
+
+    # Return the search results as well as the PCA representation of the query
+    return jsonify({
+        "query_pca_representation": pca_representation,
+        "results": results.to_dict()
+    })
+
+
 
 
 if __name__ == '__main__':
