@@ -374,6 +374,19 @@ def upload_file():
     return jsonify({"status": "success", "message": "File uploaded successfully"}), 201
         
 
+#Get all metadata
+@app.route('/get-all', methods=['GET'])
+def get_all():
+    try:
+        results = pc_index.query(
+            query={"vector": {"type": "match_all"}},
+            namespace="default"
+        )
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 # # /get-file?id={file_name}
 # @app.route('/get-file', methods=['GET'])
