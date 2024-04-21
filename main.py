@@ -5,6 +5,7 @@ import json
 import marqo
 from minio import Minio
 from dotenv import load_dotenv
+import PyPDF2
 import os
 import random
 import string
@@ -25,41 +26,11 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 
 import google.generativeai as genai
 import requests
-from PyPDF2 import PdfReader
+
 
 # genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 genai.configure(api_key='AIzaSyCLHt9_x85KmI3wl7mysoWsz41f2VJkGHc')
 
-def load_pdf_from_url(url='https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf'):
-    # Download the PDF file
-    response = requests.get(url)
-    response.raise_for_status()  # Ensure the request was successful
-
-    # Save the PDF to a temporary file
-    temp_pdf_path = 'temp_document.pdf'
-    with open(temp_pdf_path, 'wb') as f:
-        f.write(response.content)
-
-    # Load the PDF file using PyPDF2
-    reader = PdfReader(temp_pdf_path)
-    pages = [page.extract_text() for page in reader.pages]  # Extract text from each page
-
-    # Optionally, remove the temporary file if not needed
-    os.remove(temp_pdf_path)
-
-    return pages
-
-def get_summary(url):
-    # Load a publicly accessible PDF document from the Internet
-    pages = load_pdf_from_url(url)
-    for page_text in pages:
-        print(page_text)  # Print the text of each page
-    # Setup the Google Generative AI model and invoke it using a human-friendly prompt
-    model = genai.GenerativeModel('gemini-pro')
-    response = model.generate_content(f"In a single paragraph of no more that 300 characters, summarize the following text: \n {pages}:")
-
-    print('SUMMARY: ')
-    print(response.text)
 
 app = Flask(__name__)
 
@@ -138,7 +109,61 @@ embedding_processor = AlignProcessor.from_pretrained("kakaobrain/align-base")
 embedding_model = AlignModel.from_pretrained("kakaobrain/align-base")
 
 
+def load_pdf_from_url(url='https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf'):
+    # Download the PDF file
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Save the PDF to a temporary file
+    temp_pdf_path = 'temp_document.pdf'
+    with open(temp_pdf_path, 'wb') as f:
+        f.write(response.content)
+
+    # Load the PDF file using PyPDF2
+    reader = PyPDF2.PdfReader(temp_pdf_path)
+    pages = [page.extract_text() for page in reader.pages]  # Extract text from each page
+
+    # Optionally, remove the temporary file if not needed
+    os.remove(temp_pdf_path)
+
+    return pages
+
+# def get_summary(url):
+#     # Load a publicly accessible PDF document from the Internet
+#     pages = load_pdf_from_url(url)
+#     for page_text in pages:
+#         print(page_text)  # Print the text of each page
+#     # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+#     model = genai.GenerativeModel('gemini-pro')
+#     response = model.generate_content(f"In a single paragraph of no more that 300 characters, summarize the following text: \n {pages}:")
+
+#     print('SUMMARY: ')
+#     print(response.text)
+
+def get_summary(url):
+    text = load_pdf_from_url(url)
+    # Setup the Google Generative AI model and invoke it using a human-friendly prompt
+    model = genai.GenerativeModel('gemini-pro')
+    prompt = f"In a single paragraph of no more than 200 words, summarize the following text: \n{text}"
+    response = model.generate_content(prompt)
+
+    print('SUMMARY: ', response.text)
+    return response.text
+
+# def generate_text_embedding(text):
+#     text = text[:512]
+#     print('text: ', text)
+#     text_inputs = embedding_processor(text=text, return_tensors="pt")
+#     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
+#     # normalize the embeddings to unit length
+#     text_embeds /= np.linalg.norm(text_embeds)
+#     # convert to list
+#     text_embeds = text_embeds.tolist()
+#     return text_embeds
+
 def generate_text_embedding(text):
+    # text = get_summary('https://www.mckinsey.com/~/media/McKinsey/Business%20Functions/Sustainability/Our%20Insights/How%20companies%20can%20adapt%20to%20climate%20change/How%20companies%20can%20adapt%20to%20climate%20change.pdf')
+    text = text[:512]
     text_inputs = embedding_processor(text=text, return_tensors="pt")
     text_embeds = embedding_model.get_text_features(**text_inputs).detach().numpy().tolist()[0]
     # normalize the embeddings to unit length
@@ -448,6 +473,38 @@ def get_file():
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+    
+
+@app.route('/summarize-pdf', methods=['GET'])
+def summarize_pdf():
+    file_name = request.args.get('id')
+    if not file_name:
+        return jsonify({"status": "error", "message": "No file name provided."}), 400
+
+    try:
+        file_data = minio_client.get_object(bucket_name, file_name)
+        file_stream = io.BytesIO(file_data.read())  # Read the file stream from MinIO and wrap it in a BytesIO object
+        file_stream.seek(0)  # Reset stream position to the beginning
+
+        # Save to temporary file for PDF processing
+        temp_pdf_path = 'temp_document.pdf'
+        with open(temp_pdf_path, 'wb') as f:
+            f.write(file_stream.read())
+
+        reader = PyPDF2.PdfReader(temp_pdf_path)
+        full_text = " ".join([page.extract_text() for page in reader.pages if page.extract_text()])
+
+        os.remove(temp_pdf_path)  # Clean up the temporary file
+
+        # Generate summary using an AI model
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"In a single paragraph of no more than 200 words, summarize the following text: \n{full_text}"
+        response = model.generate_content(prompt)
+
+        return jsonify({"status": "success", "summary": response.text})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 
 if __name__ == '__main__':
